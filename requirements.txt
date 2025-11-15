@@ -5,14 +5,32 @@ pydantic==2.5.0
 pydantic-settings==2.1.0
 python-dotenv==1.0.0
 
+# Database
+sqlalchemy==2.0.23
+alembic==1.12.1
+psycopg2-binary==2.9.9
+
+# Authentication
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-multipart==0.0.6
+email-validator==2.1.0.post1
+
 # Celery and Redis for background tasks
 celery==5.3.4
 redis==5.0.1
 flower==2.0.1
+langchain-core
+langchain-openai
+langgraph
 
-# Optional: Add your project-specific dependencies below
-# python-multipart==0.0.6  # For file uploads
-# sqlalchemy==2.0.23       # For database ORM
-# psycopg2-binary==2.9.9   # For PostgreSQL
-# alembic==1.12.1          # For database migrations
+# Development
+pytest==7.4.3
+httpx==0.25.1
+pytest-cov==4.1.0
+
+# Utilities
+python-dateutil==2.8.2
+python-multipart==0.0.6
 

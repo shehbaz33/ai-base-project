@@ -1,10 +1,15 @@
 from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from .api.v1.endpoints import router as example_router
-from .config.settings import get_settings
 import logging
 import sys
+
+# Application imports
+from app.database import init_db
+from app.config.settings import get_settings
+from app.api.v1.endpoints import auth as auth_endpoints, search_agents, websocket
+from app.api.v1.endpoints import protected as protected_endpoints
+from app.api.v1.endpoints import router as example_router
 
 # Configure logging
 logging.basicConfig(
@@ -45,9 +50,14 @@ def create_application() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    init_db()
 
     # Include API routers
     app.include_router(example_router, prefix="/api/v1")
+    app.include_router(auth_endpoints.router, prefix="/api/v1/auth", tags=["Authentication"])
+    app.include_router(protected_endpoints.router, prefix="/api/v1", tags=["Protected"])
+    app.include_router(search_agents.router, prefix="/api/v1", tags=["Search Agents"])
+    app.include_router(websocket.router, prefix="/api/v1", tags=["Websocket"])
 
     @app.get("/health")
     async def health_check():

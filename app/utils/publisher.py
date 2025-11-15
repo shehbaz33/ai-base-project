@@ -1,0 +1,18 @@
+# app/utils/publisher.py
+import json
+import time
+from app.utils.redis_client import redis_client
+
+def publish_event(task_id, agent, event_type, stage, message, payload=None):
+    event = {
+        "task_id": task_id,
+        "agent": agent,
+        "type": event_type,
+        "stage": stage,
+        "message": message,
+        "payload": payload,
+        "timestamp": time.time(),
+    }
+
+    # push event to redis queue
+    redis_client.rpush(f"agent_stream:{task_id}", json.dumps(event))

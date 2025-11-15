@@ -12,7 +12,8 @@ celery_app = Celery(
     backend=os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"),
 )
 
-celery_app.autodiscover_tasks(['app'])
+celery_app.autodiscover_tasks(packages=['app.agents'],
+    force=True)
 
 # Optional: Update config for serialization & timezone
 celery_app.conf.update(

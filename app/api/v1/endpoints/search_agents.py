@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException,Depends, status
 from celery.result import AsyncResult
 from typing import Dict, Any
 
-from app.agents.search_apollo_agent import run_apollo_agent
+from app.agents.apollo.task import run_apollo_agent
 from app.celery_config import celery_app
 from app.api.deps import get_current_user
 from app.models.user import User
@@ -10,8 +10,10 @@ from app.models.user import User
 router = APIRouter()
 
 @router.post("/run_search_agent", response_model=Dict[str, str])
-async def trigger_search_agent(payload: Dict[str, str],
-    current_user: User = Depends(get_current_user) ):
+async def trigger_search_agent(
+    payload: Dict[str, str],
+    current_user: User = Depends(get_current_user)
+):
     """
     Trigger the Apollo search agent with a query.
     Returns the Celery task ID for tracking.
@@ -22,8 +24,20 @@ async def trigger_search_agent(payload: Dict[str, str],
             detail="Query parameter is required"
         )
     
-    task = run_apollo_agent.delay(payload["query"])
-    return {"task_id": str(task.id)}
+    try:
+        # Start the Apollo search agent task
+        task = run_apollo_agent.delay(payload["query"])
+        return {
+            "task_id": str(task.id),
+            "status": "started",
+            "message": "Search agent started. Use the task_id to track progress via WebSocket."
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start search agent: {str(e)}"
+        )
+
 
 @router.get("/search_agent/task/{task_id}", response_model=Dict[str, Any])
 async def get_task_status(task_id: str,current_user: User = Depends(get_current_user)):

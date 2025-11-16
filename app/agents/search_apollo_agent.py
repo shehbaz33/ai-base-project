@@ -68,8 +68,8 @@ def create_test_agent():
 agent = create_test_agent()
 
 
-@shared_task(bind=True, name="run_apollo_agent")
-def run_apollo_agent(self, query: str):
+@shared_task(bind=True, name="run_apollo_agent_test")
+def run_apollo_agent_test(self, query: str):
     task_id = self.request.id
 
     try:

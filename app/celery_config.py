@@ -12,7 +12,7 @@ celery_app = Celery(
     backend=os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0"),
 )
 
-celery_app.autodiscover_tasks(packages=['app.agents'],
+celery_app.autodiscover_tasks(packages=['app.agents','app.agents.apollo'],
     force=True)
 
 # Optional: Update config for serialization & timezone

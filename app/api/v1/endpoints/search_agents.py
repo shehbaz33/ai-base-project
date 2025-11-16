@@ -23,10 +23,10 @@ async def trigger_search_agent(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Query parameter is required"
         )
-    
+        
     try:
         # Start the Apollo search agent task
-        task = run_apollo_agent.delay(payload["query"])
+        task = run_apollo_agent.delay(payload["query"],current_user.id)
         return {
             "task_id": str(task.id),
             "status": "started",

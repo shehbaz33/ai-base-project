@@ -5,6 +5,7 @@ from app.config.settings import get_settings
 
 # Get settings
 settings = get_settings()
+Base = declarative_base()
 
 # Create database engine
 engine = create_engine(
@@ -19,7 +20,6 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Base class for models
-Base = declarative_base()
 
 def init_db():
     """Initialize database and create tables"""

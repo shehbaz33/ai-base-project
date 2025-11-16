@@ -52,16 +52,21 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
                 await asyncio.sleep(0.1)
                 continue
 
-            _, message = result
-            data = json.loads(message)
+            _, raw = result
 
+            # FIX: decode bytes → string
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8")
+
+            # parse event
+            data = json.loads(raw)
+
+            # send to frontend
             await websocket.send_json(data)
 
     except WebSocketDisconnect:
         print(f"Disconnected {task_id}")
 
-    finally:
-        pass
 
 
 

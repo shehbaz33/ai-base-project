@@ -14,4 +14,8 @@ def publish_event(task_id, agent, event_type, stage, message, payload=None):
         "timestamp": time.time(),
     }
 
-    redis_client.publish(f"task:{task_id}", json.dumps(event))
+    redis_client.rpush(
+        f"agent_stream:{task_id}",
+        json.dumps(event)
+    )
+

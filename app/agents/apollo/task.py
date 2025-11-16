@@ -92,8 +92,6 @@ def run_apollo_agent(self, query: str, user_id: str):
                 # 2. save raw source entry
                 create_entity_source(db, provider, entity, raw)
 
-                print(entity_type,'entity_type')
-
                 # 3. save normalized profile
                 create_entity_profile(db, entity, raw, entity_type)
 

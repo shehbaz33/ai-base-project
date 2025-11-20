@@ -1,41 +1,157 @@
-# app/api/v1/endpoints/search.py
 from typing import List
-from app.api.deps import get_current_user
-from app.database import get_db
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+
+from app.api.deps import get_current_user
+from app.database import get_db
 from app.models.user import User
 from app import crud
-from app.schemas.search import SearchResult
+from app.schemas.search import Search, SearchWithResults, SearchResult
 
 router = APIRouter()
 
-@router.get("/history", response_model=List[SearchResult])
-def get_search_history(
-    skip: int = 0,
+@router.get("/get_recent_searches")
+async def get_recent_searches(
     limit: int = 10,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Retrieve search history for the current user."""
-    search_results = crud.search.get_user_search_results(
-        db, user_id=current_user.id, skip=skip, limit=limit
-    )
-    return search_results
+    """
+    Get the most recent searches for the current user.
+    Returns:
+        {
+            "data": [
+                {
+                    "id": "uuid",
+                    "user_id": "uuid",
+                    "query": "search query",
+                    "filters": {},
+                    "created_at": "datetime",
+                    "updated_at": "datetime"
+                }
+            ],
+            "status": true,
+            "message": "Recent searches retrieved successfully"
+        }
+    """
+    try:
+        searches = crud.get_recent_searches(
+            db=db,
+            user_id=current_user.id,
+            limit=limit
+        )
+        
+        # Transform the results to match the Search schema
+        search_results = [
+            Search(
+                id=search['id'],
+                user_id=current_user.id,
+                query=search['query'],
+                filters=search['filters'],
+                created_at=search['created_at'],
+                updated_at=search.get('updated_at', search['created_at'])
+            ).dict()
+            for search in searches
+        ]
+        
+        return {
+            "data": search_results,
+            "status": True,
+            "message": "Recent searches retrieved successfully"
+        }
+        
+    except Exception as e:
+        # Log the error for debugging
+        print(f"Error in get_recent_searches: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "data": [],
+                "status": False,
+                "message": f"Error retrieving recent searches: {str(e)}"
+            }
+        )
 
-@router.get("/{search_id}", response_model=SearchResult)
-def get_search_result(
-    search_id: int,
+@router.get("/get_all_searches")
+async def get_all_searches(
+    skip: int = 0,
+    limit: int = 100,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get a specific search result by ID."""
-    search_result = crud.search.get_search_result_with_entities(
-        db, search_id=search_id, user_id=current_user.id
-    )
-    if not search_result:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Search result not found"
+    """
+    Get all searches for the current user with pagination.
+    
+    - **skip**: Number of records to skip (for pagination)
+    - **limit**: Maximum number of records to return (for pagination)
+    """
+    try:
+        searches = crud.search.get_user_searches(
+            db=db,
+            user_id=current_user.id,
+            skip=skip,
+            limit=limit
         )
-    return search_result
+        
+        search_results = [
+            Search(
+                id=search['id'],
+                user_id=current_user.id,
+                query=search['query'],
+                filters=search['filters'],
+                created_at=search['created_at'],
+                updated_at=search.get('updated_at', search['created_at'])
+            ).dict()
+            for search in searches
+        ]
+
+        return {
+            "data": search_results,
+            "status": True,
+            "message": "All searches retrieved successfully"
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "data": [],
+                "status": False,
+                "message": f"Error retrieving all searches: {str(e)}"
+            }
+        )
+
+@router.get("/search/{search_id}", response_model=SearchWithResults)
+async def get_search_by_id(
+    search_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get a specific search by ID with all its results and entity details.
+    
+    - **search_id**: The UUID of the search to retrieve
+    """
+    try:
+        search_with_results = crud.search.get_search_with_results(
+            db=db,
+            search_id=search_id,
+            user_id=current_user.id
+        )
+        
+        if not search_with_results:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Search not found or access denied"
+            )
+            
+        return search_with_results
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving search: {str(e)}"
+        )

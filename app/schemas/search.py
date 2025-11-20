@@ -1,36 +1,59 @@
-# app/models/search/schemas.py
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
+from uuid import UUID
 
-class SearchEntityBase(BaseModel):
-    id: str
-    name: str
-    type: str
-    data: Dict[str, Any]
+class SearchBase(BaseModel):
+    query: str
+    filters: Optional[Dict[str, Any]] = None
 
-class SearchEntityCreate(SearchEntityBase):
+class SearchCreate(SearchBase):
     pass
 
-class SearchEntity(SearchEntityBase):
+class Search(SearchBase):
+    id: UUID
+    user_id: UUID
     created_at: datetime
     updated_at: datetime
+    
+    class Config:
+        orm_mode = True
 
+class SearchResultEntity(BaseModel):
+    id: UUID
+    name: str
+    title: Optional[str] = None
+    company_name: Optional[str] = None
+    company_domain: Optional[str] = None
+    email: Optional[str] = None
+    location: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    website_url: Optional[str] = None
+    phone: Optional[str] = None
+    
     class Config:
         orm_mode = True
 
 class SearchResultBase(BaseModel):
-    query: str
+    search_id: UUID
+    entity_id: UUID
+    rank: Optional[int] = None
+    score: Optional[float] = None
+    raw_payload: Optional[Dict[str, Any]] = None
 
 class SearchResultCreate(SearchResultBase):
     pass
 
 class SearchResult(SearchResultBase):
-    id: int
-    user_id: int
+    id: UUID
     created_at: datetime
-    updated_at: datetime
-    entities: List[SearchEntity] = []
+    entity: Optional[SearchResultEntity] = None
+    
+    class Config:
+        orm_mode = True
 
+class SearchWithResults(Search):
+    results: List[SearchResult] = []
+    
     class Config:
         orm_mode = True

@@ -122,7 +122,7 @@ async def get_all_searches(
             }
         )
 
-@router.get("/search/{search_id}", response_model=SearchWithResults)
+@router.get("/{search_id}")
 async def get_search_by_id(
     search_id: UUID,
     db: Session = Depends(get_db),
@@ -132,6 +132,21 @@ async def get_search_by_id(
     Get a specific search by ID with all its results and entity details.
     
     - **search_id**: The UUID of the search to retrieve
+    
+    Returns:
+        {
+            "data": {
+                "id": "uuid",
+                "user_id": "uuid",
+                "query": "search query",
+                "filters": {},
+                "created_at": "datetime",
+                "updated_at": "datetime",
+                "results": [...]
+            },
+            "status": true,
+            "message": "Search retrieved successfully"
+        }
     """
     try:
         search_with_results = crud.search.get_search_with_results(
@@ -139,19 +154,32 @@ async def get_search_by_id(
             search_id=search_id,
             user_id=current_user.id
         )
-        
+
         if not search_with_results:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Search not found or access denied"
+                detail={
+                    "data": None,
+                    "status": False,
+                    "message": "Search not found or access denied"
+                }
             )
             
-        return search_with_results
+        return {
+            "data": search_with_results,
+            "status": True,
+            "message": "Search retrieved successfully"
+        }
         
     except HTTPException:
         raise
     except Exception as e:
+        print(f"Error in get_search_by_id: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving search: {str(e)}"
+            detail={
+                "data": None,
+                "status": False,
+                "message": f"Error retrieving search: {str(e)}"
+            }
         )

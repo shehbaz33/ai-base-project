@@ -211,7 +211,7 @@ def get_search_with_results(
         'query': search.query,
         'filters': search.filters or {},
         'created_at': search.created_at,
-        'updated_at': search.updated_at,
+        'updated_at': search.created_at,
         'results': []
     }
     

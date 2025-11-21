@@ -183,3 +183,54 @@ async def get_search_by_id(
                 "message": f"Error retrieving search: {str(e)}"
             }
         )
+
+
+@router.get("/entities/unique")
+async def get_unique_entities(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get all unique entities from the user's search history.
+    
+    - **skip**: Number of records to skip (for pagination)
+    - **limit**: Maximum number of records to return (for pagination)
+    """
+    try:
+        # Get unique entities
+        entities = crud.get_unique_entities_from_searches(
+            db=db,
+            user_id=current_user.id,
+            skip=skip,
+            limit=limit
+        )
+        
+        # Get total count using the new function
+        total_count = crud.get_unique_entities_count(
+            db=db,
+            user_id=current_user.id
+        )
+
+        return {
+            "data": entities,
+            "status": True,
+            "message": "Unique entities retrieved successfully",
+            "pagination": {
+                "total": total_count,
+                "skip": skip,
+                "limit": limit
+            }
+        }
+        
+    except Exception as e:
+        print(f"Error in get_unique_entities: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "data": [],
+                "status": False,
+                "message": f"Error retrieving unique entities: {str(e)}"
+            }
+        )

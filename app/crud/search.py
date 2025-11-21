@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from sqlalchemy.orm import Session, joinedload, contains_eager
-from sqlalchemy import desc, or_, func
+from sqlalchemy import desc, or_, func,distinct
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.searches import Search as SearchModel
@@ -241,3 +241,81 @@ def get_search_with_results(
         search_data['results'].append(result_data)
     
     return search_data
+
+def get_unique_entities_count(
+    db: Session,
+    user_id: UUID
+) -> int:
+    """
+    Get the total count of unique entities from a user's search history.
+    
+    Args:
+        db: Database session
+        user_id: ID of the user
+        
+    Returns:
+        Total count of unique entities
+    """
+    return db.query(
+        func.count(distinct(SearchResultModel.entity_id))
+    ).join(
+        SearchModel, SearchResultModel.search_id == SearchModel.id
+    ).filter(
+        SearchModel.user_id == user_id
+    ).scalar() or 0
+
+
+def get_unique_entities_from_searches(
+    db: Session,
+    user_id: UUID,
+    skip: int = 0,
+    limit: int = 100
+) -> List[Dict[str, Any]]:
+    """
+    Get all unique entities from a user's search history.
+    
+    Args:
+        db: Database session
+        user_id: ID of the user
+        skip: Number of records to skip (for pagination)
+        limit: Maximum number of records to return (for pagination)
+        
+    Returns:
+        List of unique entities with their details
+    """
+    # First, get distinct entity IDs from the user's searches
+    subquery = db.query(
+        SearchResultModel.entity_id
+    ).join(
+        SearchModel, SearchResultModel.search_id == SearchModel.id
+    ).filter(
+        SearchModel.user_id == user_id
+    ).distinct().subquery()
+
+    # Then get the full entity and profile data for those IDs
+    entities = db.query(
+        Entity,
+        EntityProfile
+    ).join(
+        subquery, Entity.id == subquery.c.entity_id
+    ).outerjoin(
+        EntityProfile, Entity.id == EntityProfile.entity_id
+    ).order_by(
+        Entity.name.asc()
+    ).offset(skip).limit(limit).all()
+    
+    # Format the response
+    return [{
+        'id': entity.id,
+        'name': entity.name,
+        'entity_type': entity.entity_type.value if entity.entity_type else None,
+        'title': profile.title if profile else None,
+        'company_name': profile.company_name if profile else None,
+        'company_domain': profile.company_domain if profile else None,
+        'email': profile.email if profile else None,
+        'location': profile.location if profile else None,
+        'linkedin_url': profile.linkedin_url if profile else None,
+        'website_url': profile.website_url if profile else None,
+        'phone': profile.phone if profile else None,
+        'created_at': entity.created_at
+    } for entity, profile in entities]

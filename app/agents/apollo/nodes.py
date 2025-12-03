@@ -214,17 +214,73 @@ def merge_list(*items):
 # =======================================================
 
 def analyze_intent(state: State) -> State:
-    llm = ChatOpenAI(model=LLM_MINI).with_structured_output(Output)
+    llm = ChatOpenAI(model=LLM_FULL).with_structured_output(Output)
+    
     prompt = """
-    You are an intent analyzer for an entity discovery system.
-    Identify:
-      - intent_type (why user is searching)
-      - entity_type (what is being searched)
-      - filters (where / what characteristics)
-    If unclear, set followup_needed=True and provide a clarifying question.
-    """
-    result = llm.invoke(f"{prompt}\n\nQuery: {state['query']}")
+You are an intent analyzer for an entity discovery system using Apollo.io.
+
+Your task is to identify:
+1. **intent_type**: WHY the user is searching (investor_search, talent_search, company_search, etc.)
+2. **entity_type**: WHAT is being searched (person, company, organization, etc.)
+3. **filters**: Characteristics like location, industry, size, etc.
+
+CRITICAL: Pay close attention to entity_type classification:
+
+**entity_type = "person"** when searching for:
+- Individual people by job title (e.g., "Find CTOs", "Angel Investors", "Marketing Directors")
+- Talent/candidates (e.g., "Senior React developers", "VPs of Sales")
+- Investors (e.g., "VCs", "Angel Investors", "Partners at VC firms")
+- Specific roles at companies (e.g., "Founders in fintech", "Engineers at Stripe")
+- Keywords: "Find [TITLE]", "Looking for [ROLE]", "Hire [POSITION]", "[TITLE] at [COMPANY]"
+
+**entity_type = "company"** when searching for:
+- Companies/organizations (e.g., "Fintech companies", "SaaS startups")
+- Competitors (e.g., "Companies similar to Stripe")
+- Potential customers (e.g., "Healthcare companies with 50-200 employees")
+- Partners/vendors (e.g., "Design agencies in New York")
+- Keywords: "Companies in [INDUSTRY]", "Startups with [CRITERIA]", "Similar to [COMPANY]"
+
+**Examples:**
+
+Query: "Find CTOs in fintech companies with 50-200 employees"
+→ entity_type: "person" (searching for CTOs, not companies)
+→ intent_type: "talent_search" or "customer_search"
+
+Query: "Angel Investors and VCs interested in AI startups"
+→ entity_type: "person" (searching for investors, not their firms)
+→ intent_type: "investor_search"
+
+Query: "Companies similar to Stripe in financial services"
+→ entity_type: "company" (searching for companies, not people)
+→ intent_type: "company_search"
+
+Query: "Fintech startups with less than 100 employees and under $5M funding"
+→ entity_type: "company" (searching for companies)
+→ intent_type: "company_search"
+
+Query: "Senior React Native engineers in San Francisco"
+→ entity_type: "person" (searching for engineers)
+→ intent_type: "talent_search"
+
+Query: "Marketing Directors at Series A SaaS companies"
+→ entity_type: "person" (searching for Marketing Directors)
+→ intent_type: "customer_search" or "talent_search"
+
+If the query is unclear or ambiguous, set followup_needed=True and provide a clarifying question.
+
+Remember: If the query mentions a JOB TITLE or ROLE, it's almost always searching for PEOPLE (entity_type="person").
+If it mentions "companies", "startups", "organizations", "firms" without specifying roles, it's searching for COMPANIES (entity_type="company").
+"""
+    
+    result = llm.invoke(f"{prompt}\n\nUser Query: {state['query']}")
     state["intent"] = result.intent
+    
+    # Log for debugging
+    print(f"\n🎯 Intent Analysis:")
+    print(f"   Intent Type: {result.intent.intent_type}")
+    print(f"   Entity Type: {result.intent.entity_type}")
+    print(f"   Filters: {result.intent.filters.dict(exclude_none=True)}")
+    
     return state 
 
 # =======================================================
@@ -255,6 +311,7 @@ def query_enricher(state: State) -> State:
 
 def autonomous_discovery_planner(state: State) -> State:
     intent = state["intent"]
+    print(intent,'intent')
     llm = ChatOpenAI(model=LLM_FULL)
     q = state.get("enriched_query") or intent.query
 
@@ -294,6 +351,8 @@ def should_use_apollo_rule(state: State) -> bool:
 def apollo_people_query_planner_llm(state: State) -> State:
     llm = ChatOpenAI(model=LLM_FULL)
     extracted = state.get("extracted_filters") or ExtractedApolloFilters()
+
+    print(extracted,'extracted')
 
     prompt = f"""
     You are an expert at diagnosing overly strict search filters for Apollo.io.
@@ -628,6 +687,13 @@ def apollo_people_search(state: State) -> State:
         url = f"{APOLLO_API_URL}?{query_str}"
 
         print(f"\n📡 Trying Apollo {tier_name.upper()} Query:\n{url}\n")
+        
+        # Publish tier attempt
+        from app.utils.publisher import publish_event
+        task_id = state.get("task_id", "unknown")
+        tier_label = {"tier_1": "strict", "tier_2": "moderate", "tier_3": "broad"}[tier_name]
+        publish_event(task_id, "apollo_agent", "thinking", f"search_{tier_name}",
+                      f"🔍 Trying {tier_label} search filters...", {"tier": tier_name})
 
         try:
             response = requests.post(url, headers=headers, timeout=30)
@@ -637,18 +703,30 @@ def apollo_people_search(state: State) -> State:
 
             if people:
                 print(f"✅ {len(people)} results found in {tier_name}.")
+                publish_event(task_id, "apollo_agent", "thinking", f"search_{tier_name}_success",
+                              f"✅ Found {len(people)} matching people!", 
+                              {"tier": tier_name, "count": len(people)})
                 all_people = people[:MAX_APOLLO_RESULTS]
                 state["apollo_query_url"] = url
                 break
             else:
                 print(f"⚠️ No results in {tier_name}, moving to next tier...")
+                publish_event(task_id, "apollo_agent", "thinking", f"search_{tier_name}_empty",
+                              f"⚠️ No results with {tier_label} filters, trying broader search...", 
+                              {"tier": tier_name})
 
         except Exception as e:
             print(f"❌ Apollo {tier_name} failed: {e}")
+            publish_event(task_id, "apollo_agent", "thinking", f"search_{tier_name}_failed",
+                          f"⚠️ Search failed, trying next tier...", {"tier": tier_name, "error": str(e)})
             continue
 
     if not all_people:
         print("⚠️ All tiers failed to return results.")
+        from app.utils.publisher import publish_event
+        task_id = state.get("task_id", "unknown")
+        publish_event(task_id, "apollo_agent", "thinking", "search_no_results",
+                      "⚠️ No results found. Try adjusting your search criteria.", {})
 
     state["apollo_results"] = all_people
     return state
@@ -1052,7 +1130,7 @@ def enrich_all_apollo_people(state: State) -> State:
     enriched = []
     print(f"\n⚙️ Starting enrichment for {len(people)} people...")
 
-    for i, person in enumerate(people[:5]):
+    for i, person in enumerate(people):
         person_id = person.get("id") or person.get("person_id")
         if not person_id:
             print(f"⚠️ Skipping person {i+1}: no Apollo ID found.")
@@ -1080,7 +1158,7 @@ def enrich_all_apollo_companies(state: State) -> State:
     enriched = []
     print(f"\n⚙️ Starting enrichment for {len(companies)} companies...")
 
-    for i, company in enumerate(companies[:5]):
+    for i, company in enumerate(companies):
         domain = None
 
         if company.get("primary_domain"):

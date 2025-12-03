@@ -30,13 +30,32 @@ def streaming_node(name):
         def wrapped(state: State) -> State:
             task_id = state.get("task_id", "unknown")
             
-            # Publish start of node execution
+            # Publish start of node execution with user-friendly message
+            user_messages = {
+                "analyze_intent": "🎯 Understanding what you're looking for...",
+                "query_enricher": "✨ Enhancing your search query...",
+                "discovery_planner": "🗺️ Planning the best search strategy...",
+                "planner_pipeline": "⚙️ Preparing search filters...",
+                "apollo_filter_extractor": "🔍 Extracting search criteria...",
+                "apollo_people_query_planner": "👥 Building people search query...",
+                "apollo_company_query_planner": "🏢 Building company search query...",
+                "normalize_locations": "📍 Normalizing locations...",
+                "apollo_people_search": "🔎 Searching for people in Apollo database...",
+                "apollo_company_search": "🔎 Searching for companies in Apollo database...",
+                "enrich_people": "💎 Enriching contact details...",
+                "enrich_companies": "💎 Enriching company information...",
+                "summarize_results": "📊 Analyzing and summarizing results...",
+                "fallback_serp": "🌐 Searching the web for additional results..."
+            }
+            
+            user_message = user_messages.get(name, f"Processing {name.replace('_', ' ')}...")
+            
             publish_event(
                 task_id=task_id,
                 agent="apollo_agent",
-                event_type="progress",
+                event_type="thinking",
                 stage=name,
-                message=f"Starting {name.replace('_', ' ')}...",
+                message=user_message,
                 payload={"node": name, "status": "started"}
             )
             
@@ -44,13 +63,26 @@ def streaming_node(name):
                 # Execute the node
                 result = fn(state)
                 
-                # Publish completion
+                # Publish completion with user-friendly message
+                completion_messages = {
+                    "analyze_intent": "✅ Intent understood",
+                    "query_enricher": "✅ Query optimized",
+                    "discovery_planner": "✅ Search strategy ready",
+                    "apollo_people_search": "✅ Found matching people",
+                    "apollo_company_search": "✅ Found matching companies",
+                    "enrich_people": "✅ Contact details enriched",
+                    "enrich_companies": "✅ Company data enriched",
+                    "summarize_results": "✅ Results ready"
+                }
+                
+                completion_message = completion_messages.get(name, f"Completed {name.replace('_', ' ')}")
+                
                 publish_event(
                     task_id=task_id,
                     agent="apollo_agent",
-                    event_type="progress",
+                    event_type="thinking",
                     stage=name,
-                    message=f"Completed {name.replace('_', ' ')}",
+                    message=completion_message,
                     payload={"node": name, "status": "completed"}
                 )
                 

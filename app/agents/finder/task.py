@@ -9,11 +9,19 @@ sys.setrecursionlimit(3000)
 from app.utils.publisher import publish_event
 from .graph import build_graph
 from app.agents.apollo.graph import build_graph as build_apollo_graph
+from app.database import SessionLocal
+from app.services.finder import (
+    create_finder_session,
+    update_finder_session_query,
+    update_finder_session_status
+)
 
 def run_finder_agent_impl(task_id: str, input_text: str, user_id: Optional[str] = None):
 
     # task_id passed explicitly
     start = time.time()
+    db = SessionLocal()
+    finder_session = None
 
     publish_event(task_id, "finder_agent", "started", "initializing",
                   "Finder Agent started", {"input": input_text})
@@ -34,16 +42,49 @@ def run_finder_agent_impl(task_id: str, input_text: str, user_id: Optional[str] 
             node = list(ev.keys())[0]
             final_state = ev[node]
 
+        print(final_state,'final_state')
+        
+        # --- SAVE FINDER SESSION TO DATABASE ---
+        if user_id:
+            try:
+                finder_session = create_finder_session(
+                    db=db,
+                    user_id=user_id,
+                    task_id=task_id,
+                    raw_input=final_state.get("raw_input", input_text),
+                    intent_type=final_state.get("intent_type"),
+                    intent_confidence=final_state.get("intent_confidence"),
+                    intent_reasoning=final_state.get("intent_reasoning"),
+                    product_understanding=final_state.get("product_understanding", {}),
+                    icp_profile=final_state.get("icp_profile", {}),
+                    personas=final_state.get("personas", []),
+                    discovery_queries=final_state.get("discovery_queries", {}),
+                    scraped_content=final_state.get("scraped_content"),
+                    follow_up_questions=final_state.get("follow_up_questions", [])
+                )
+                print(f"✅ Saved Finder session to database: {finder_session.id}")
+            except Exception as e:
+                print(f"⚠️ Failed to save Finder session: {e}")
+                traceback.print_exc()
+
+
         # If clarification needed → return immediately
         if final_state.get("follow_up_needed"):
+            # Update session status
+            if finder_session:
+                try:
+                    update_finder_session_status(db, finder_session, "needs_clarification")
+                except Exception as e:
+                    print(f"⚠️ Failed to update session status: {e}")
+            
+            db.close()
             publish_event(task_id, "finder_agent", "needs_input", "clarification",
                           "Need user clarification", {"questions": final_state["follow_up_questions"]})
 
             return {
                 "status": "need_clarification",
                 "questions": final_state["follow_up_questions"],
-                "execution_time": time.time() - start
-            }
+                "execution_time": time.time() - start}
 
         print(final_state,'final_state')
 
@@ -116,6 +157,13 @@ def run_finder_agent_impl(task_id: str, input_text: str, user_id: Optional[str] 
                                   f"✅ Optimized search: \"{apollo_query_text}\"", 
                                   {"synthesized_query": apollo_query_text})
                     
+                    # Save synthesized query to database
+                    if finder_session:
+                        try:
+                            update_finder_session_query(db, finder_session, apollo_query_text)
+                        except Exception as e:
+                            print(f"⚠️ Failed to update synthesized query: {e}")
+                    
             except Exception as e:
                 print(f"⚠️ LLM synthesis failed: {e}, using raw input")
                 apollo_query_text = raw_input
@@ -154,22 +202,42 @@ def run_finder_agent_impl(task_id: str, input_text: str, user_id: Optional[str] 
 
             results = apollo_final.get("apollo_enriched_results") or apollo_final.get("apollo_results") or []
 
+            # Update session status to completed
+            if finder_session:
+                try:
+                    update_finder_session_status(db, finder_session, "completed")
+                except Exception as e:
+                    print(f"⚠️ Failed to update session status: {e}")
+
             publish_event(task_id, "finder_agent", "completed", "done",
                           "Finder Agent + Apollo completed", {"results_count": len(results)})
 
+            db.close()  # Close database connection
+            
             return {
                 "status": "completed",
                 "results": results,
                 "results_count": len(results),
+                "session_id": str(finder_session.id) if finder_session else None,
                 "execution_time": time.time() - start
             }
 
         # publish_event(task_id, "finder_agent", "completed", "done",
         #               "Finder Agent finished (no discovery)", {})
 
+        db.close()
         return {"status": "ok", "execution_time": time.time() - start}
 
     except Exception as e:
         traceback.print_exc()
+        
+        # Update session status to failed
+        if finder_session:
+            try:
+                update_finder_session_status(db, finder_session, "failed")
+            except:
+                pass
+        
+        db.close()
         publish_event(task_id, "finder_agent", "error", "failed", str(e))
         raise

@@ -23,7 +23,17 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
     """Initialize database and create tables"""
-    from app.models.user import Base  # Import your models
+    # Import all models to ensure tables are created
+    from app.models import (
+        User, 
+        Provider, 
+        Entity, 
+        Search, 
+        SearchResult, 
+        EntityProfile, 
+        EntitySource,
+        FinderSession  # Import the new model
+    )
     Base.metadata.create_all(bind=engine)
 
 def get_db():

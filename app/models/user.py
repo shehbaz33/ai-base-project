@@ -25,6 +25,7 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
+    finder_sessions = relationship("FinderSession", back_populates="user", cascade="all, delete-orphan")
 
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"

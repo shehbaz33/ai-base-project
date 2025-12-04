@@ -6,6 +6,7 @@ from .searches import Search
 from .search_results import SearchResult
 from .entity_profiles import EntityProfile
 from .entity_sources import EntitySource
+from .finder_sessions import FinderSession
 
 __all__ = [
     'User',
@@ -15,5 +16,6 @@ __all__ = [
     'Search',
     'SearchResult',
     'EntitySource',
-    'EntityProfile'
+    'EntityProfile',
+    'FinderSession'
 ]

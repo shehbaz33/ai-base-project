@@ -27,7 +27,7 @@ def create_finder_session(
     """
     session = FinderSession(
         id=uuid.uuid4(),
-        user_id=uuid.UUID(user_id) if user_id else None,
+        user_id=(user_id if isinstance(user_id, uuid.UUID) else uuid.UUID(user_id)) if user_id else None,
         task_id=task_id,
         raw_input=raw_input,
         intent_type=intent_type,
@@ -58,6 +58,20 @@ def update_finder_session_query(
     Update the synthesized query for a finder session.
     """
     session.synthesized_query = synthesized_query
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+def update_finder_session_results(
+    db: Session,
+    session: FinderSession,
+    results: list
+) -> FinderSession:
+    """
+    Update the results for a finder session.
+    """
+    session.results = results
     db.commit()
     db.refresh(session)
     return session

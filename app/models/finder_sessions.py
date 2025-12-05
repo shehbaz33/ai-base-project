@@ -48,6 +48,9 @@ class FinderSession(Base):
     
     # Synthesized Apollo query (the final optimized query)
     synthesized_query = Column(Text, nullable=True)
+
+    # Results from Apollo
+    results = Column(JSONB, default=list)
     
     # Scraped content (if URL was provided)
     scraped_content = Column(Text, nullable=True)

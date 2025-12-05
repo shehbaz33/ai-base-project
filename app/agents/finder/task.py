@@ -13,8 +13,10 @@ from app.database import SessionLocal
 from app.services.finder import (
     create_finder_session,
     update_finder_session_query,
-    update_finder_session_status
+    update_finder_session_status,
+    update_finder_session_results
 )
+from app.services.entities import process_and_save_apollo_results
 
 def run_finder_agent_impl(task_id: str, input_text: str, user_id: Optional[str] = None):
 
@@ -23,6 +25,8 @@ def run_finder_agent_impl(task_id: str, input_text: str, user_id: Optional[str] 
     db = SessionLocal()
     finder_session = None
 
+
+    print(user_id,'user_id')
     publish_event(task_id, "finder_agent", "started", "initializing",
                   "Finder Agent started", {"input": input_text})
 
@@ -45,7 +49,9 @@ def run_finder_agent_impl(task_id: str, input_text: str, user_id: Optional[str] 
         print(final_state,'final_state')
         
         # --- SAVE FINDER SESSION TO DATABASE ---
+        # --- SAVE FINDER SESSION TO DATABASE ---
         if user_id:
+            print(f"💾 Attempting to save Finder session for user: {user_id}")
             try:
                 finder_session = create_finder_session(
                     db=db,
@@ -66,6 +72,8 @@ def run_finder_agent_impl(task_id: str, input_text: str, user_id: Optional[str] 
             except Exception as e:
                 print(f"⚠️ Failed to save Finder session: {e}")
                 traceback.print_exc()
+        else:
+            print("⚠️ Skipping Finder session save: No user_id provided")
 
 
         # If clarification needed → return immediately
@@ -203,11 +211,23 @@ def run_finder_agent_impl(task_id: str, input_text: str, user_id: Optional[str] 
             results = apollo_final.get("apollo_enriched_results") or apollo_final.get("apollo_results") or []
 
             # Update session status to completed
+            # Update session status to completed
             if finder_session:
                 try:
+                    update_finder_session_results(db, finder_session, results)
+                    
+                    # Process and save normalized entities
+                    # Determine entity type hint from intent
+                    entity_type_hint = None
+                    if apollo_seed.get("intent", {}).get("entity_type"):
+                        entity_type_hint = apollo_seed["intent"]["entity_type"]
+                        
+                    process_and_save_apollo_results(db, results, entity_type_hint)
+                    
                     update_finder_session_status(db, finder_session, "completed")
                 except Exception as e:
-                    print(f"⚠️ Failed to update session status: {e}")
+                    print(f"⚠️ Failed to update session status/results: {e}")
+                    traceback.print_exc()
 
             publish_event(task_id, "finder_agent", "completed", "done",
                           "Finder Agent + Apollo completed", {"results_count": len(results)})

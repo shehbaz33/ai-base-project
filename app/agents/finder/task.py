@@ -14,7 +14,8 @@ from app.services.finder import (
     create_finder_session,
     update_finder_session_query,
     update_finder_session_status,
-    update_finder_session_results
+    update_finder_session_results,
+    update_finder_session_apollo_params
 )
 from app.services.entities import process_and_save_apollo_results
 
@@ -222,7 +223,13 @@ def run_finder_agent_impl(task_id: str, input_text: str, user_id: Optional[str] 
                     if apollo_seed.get("intent", {}).get("entity_type"):
                         entity_type_hint = apollo_seed["intent"]["entity_type"]
                         
-                    process_and_save_apollo_results(db, results, entity_type_hint)
+                    process_and_save_apollo_results(db, results, entity_type_hint, session_id=finder_session.id)
+                    
+                    # Save the actual executed params and pagination state
+                    executed_params = apollo_final.get("executed_apollo_params", {})
+                    pagination_state = apollo_final.get("pagination", {"page": 1, "per_page": 10})
+                    
+                    update_finder_session_apollo_params(db, finder_session, executed_params, pagination_state)
                     
                     update_finder_session_status(db, finder_session, "completed")
                 except Exception as e:
@@ -260,4 +267,105 @@ def run_finder_agent_impl(task_id: str, input_text: str, user_id: Optional[str] 
         
         db.close()
         publish_event(task_id, "finder_agent", "error", "failed", str(e))
+        raise
+
+def continue_finder_session_impl(session_id: str, page: int = 1, per_page: int = 10):
+    """
+    Continues an existing finder session by fetching more results (pagination).
+    Skips the planning phase and directly executes the Apollo search with new pagination params.
+    """
+    start = time.time()
+    db = SessionLocal()
+    
+    try:
+        # Load session
+        from app.models.finder_sessions import FinderSession
+        finder_session = db.query(FinderSession).filter(FinderSession.id == session_id).first()
+        
+        if not finder_session:
+            raise ValueError(f"Finder session {session_id} not found")
+            
+        task_id = f"continue_{session_id}_{page}"
+        
+        publish_event(task_id, "finder_agent", "started", "initializing",
+                      f"Fetching page {page} for session", {"session_id": session_id})
+
+        # Reconstruct Apollo Seed State
+        apollo_graph = build_apollo_graph()
+        
+        # Use saved synthesized query or fallback to raw input
+        query_text = finder_session.synthesized_query or finder_session.raw_input
+        
+        # Use stored params if available
+        executed_params = finder_session.apollo_query_params or {}
+        
+        apollo_seed = {
+            "query": query_text,
+            "enriched_query": None,
+            "intent": {
+                "query": query_text, 
+                "intent_type": finder_session.intent_type or "general_search", 
+                "entity_type": "mixed" # We let Apollo agent re-infer or use discovery plan
+            },
+            "discovery_plan": finder_session.discovery_queries or {},
+            "apollo_query": None,
+            "serp_queries": [],
+            "apollo_results": [],
+            "apollo_summary": None,
+            "extracted_filters": {},
+            "task_id": task_id,
+            "pagination": {
+                "page": page,
+                "per_page": per_page
+            },
+            "executed_apollo_params": executed_params
+        }
+        
+        print(f"\n🚀 Continuing Session {session_id} - Page {page}\n")
+
+        apollo_final = None
+        for ev in apollo_graph.stream(apollo_seed):
+            node = list(ev.keys())[0]
+            apollo_final = ev[node]
+
+        results = apollo_final.get("apollo_enriched_results") or apollo_final.get("apollo_results") or []
+        
+        # Save new results
+        if results:
+            # Append to existing results in DB JSON (optional, might get large)
+            # Better to just link the new entities
+            
+            # Link new entities
+            entity_type_hint = None
+            if finder_session.intent_type in ["selling_product", "hiring", "job_search"]:
+                 entity_type_hint = "person"
+            elif finder_session.intent_type in ["competitor_research", "similar_company_search"]:
+                 entity_type_hint = "company"
+                 
+            process_and_save_apollo_results(db, results, entity_type_hint, session_id=finder_session.id)
+            
+            # Update pagination state in DB
+            new_pagination_state = {"page": page, "per_page": per_page}
+
+            print(new_pagination_state,'new_pagination_state')
+            # Keep existing query params
+            existing_params = finder_session.apollo_query_params or {}
+            
+            update_finder_session_apollo_params(db, finder_session, existing_params, new_pagination_state)
+            
+        publish_event(task_id, "finder_agent", "completed", "done",
+                      "Fetched additional results", {"results_count": len(results)})
+
+        db.close()
+        
+        return {
+            "status": "completed",
+            "results_count": len(results),
+            "page": page,
+            "execution_time": time.time() - start
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        db.close()
         raise

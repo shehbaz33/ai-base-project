@@ -60,6 +60,12 @@ class FinderSession(Base):
     
     # Follow-up questions (if clarification needed)
     follow_up_questions = Column(JSONB, default=list)
+
+    # Actual Apollo Query Parameters used (for pagination/re-use)
+    apollo_query_params = Column(JSONB, default=dict)
+    
+    # Pagination state
+    pagination_state = Column(JSONB, default=lambda: {"page": 1, "per_page": 10})
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -68,21 +74,39 @@ class FinderSession(Base):
     # Relationship to user
     user = relationship("User", back_populates="finder_sessions")
     
-    # def to_dict(self):
-    #     """Convert to dictionary for API responses"""
-    #     return {
-    #         "id": str(self.id),
-    #         "user_id": str(self.user_id),
-    #         "task_id": self.task_id,
-    #         "raw_input": self.raw_input,
-    #         "intent_type": self.intent_type,
-    #         "intent_confidence": self.intent_confidence,
-    #         "product_understanding": self.product_understanding,
-    #         "icp_profile": self.icp_profile,
-    #         "personas": self.personas,
-    #         "discovery_queries": self.discovery_queries,
-    #         "synthesized_query": self.synthesized_query,
-    #         "status": self.status,
-    #         "created_at": self.created_at.isoformat() if self.created_at else None,
-    #         "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-    #     }
+    # Relationship to results
+    session_results = relationship("FinderSessionResult", back_populates="session", cascade="all, delete-orphan")
+    
+    def to_dict(self):
+        """Convert to dictionary for API responses"""
+        execution_time = None
+        if self.completed_at and self.created_at:
+            execution_time = (self.completed_at - self.created_at).total_seconds()
+
+        entities_fetched = 0
+        if self.results and isinstance(self.results, list):
+            entities_fetched = len(self.results)
+
+        return {
+            "id": str(self.id),
+            "user_id": str(self.user_id),
+            "task_id": self.task_id,
+            "raw_input": self.raw_input,
+            "intent_type": self.intent_type,
+            "intent_confidence": self.intent_confidence,
+            "product_understanding": self.product_understanding,
+            "icp_profile": self.icp_profile,
+            "personas": self.personas,
+            "discovery_queries": self.discovery_queries,
+            "synthesized_query": self.synthesized_query,
+            "apollo_query_params": self.apollo_query_params,
+            "pagination_state": self.pagination_state,
+            "results": entities_fetched,
+            "metrics": {
+                "execution_time_seconds": execution_time,
+                "entities_fetched": entities_fetched
+            },
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+        }

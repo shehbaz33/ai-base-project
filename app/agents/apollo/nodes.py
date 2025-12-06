@@ -121,6 +121,8 @@ class State(TypedDict):
     apollo_query_plan: Optional[ApolloQueryPlan]
     apollo_enriched_results: Optional[List[Dict[str, Any]]]
     apollo_enriched_companies: Optional[List[Dict[str, Any]]]
+    pagination: Optional[Dict[str, int]] # { "page": 1, "per_page": 10 }
+    executed_apollo_params: Optional[Dict[str, Any]]
 
 class NormalizedLocations(BaseModel):
     person_locations: List[str]
@@ -347,8 +349,20 @@ def autonomous_discovery_planner(state: State) -> State:
 def should_use_apollo_rule(state: State) -> bool:
     """Always use Apollo"""
     return True
-
+    
 def apollo_people_query_planner_llm(state: State) -> State:
+    # CHECK FOR FORCED PARAMS (e.g. from pagination)
+    forced_params = state.get("executed_apollo_params")
+    if forced_params:
+        print("⚡ Using forced Apollo params (skipping LLM planning)")
+        plan = {
+            "tier_1": {"filters": forced_params, "rationale": "Forced params from previous session"},
+            "tier_2": {"filters": {}, "rationale": "Skipped"},
+            "tier_3": {"filters": {}, "rationale": "Skipped"}
+        }
+        state["apollo_query_plan"] = plan
+        return state
+
     llm = ChatOpenAI(model=LLM_FULL)
     extracted = state.get("extracted_filters") or ExtractedApolloFilters()
 
@@ -433,6 +447,38 @@ def build_apollo_query_url(base_url: str, filters: dict) -> str:
     return f"{base_url}?" + "&".join(parts)
 
 def apollo_company_query_planner_llm(state: dict) -> dict:
+    # CHECK FOR FORCED PARAMS (e.g. from pagination)
+    forced_params = state.get("executed_apollo_params")
+    if forced_params:
+        print("⚡ Using forced Apollo params (skipping LLM planning)")
+        plan = {
+            "tier_1": {"filters": forced_params, "rationale": "Forced params from previous session"},
+            "tier_2": {"filters": {}, "rationale": "Skipped"},
+            "tier_3": {"filters": {}, "rationale": "Skipped"}
+        }
+        
+        # We need to build URLs for the forced plan too
+        base_url = "https://api.apollo.io/api/v1/mixed_companies/search"
+        
+        def build_apollo_company_url(base_url: str, filters: dict) -> str:
+            parts = []
+            for key, val in filters.items():
+                if not val:
+                    continue
+                if isinstance(val, list):
+                    for v in val:
+                        safe_val = urllib.parse.quote(str(v), safe=",[]")
+                        parts.append(f"{key}[]={safe_val}")
+                else:
+                    safe_val = urllib.parse.quote(str(val), safe=",[]")
+                    parts.append(f"{key}={safe_val}")
+            return f"{base_url}?" + "&".join(parts)
+
+        plan["tier_1"]["query_url"] = build_apollo_company_url(base_url, forced_params)
+        
+        state["apollo_query_plan"] = plan
+        return state
+
     llm_full = ChatOpenAI(model=LLM_FULL)
     llm_mini = ChatOpenAI(model=LLM_MINI)
     extracted = state.get("extracted_filters") or ExtractedApolloFilters()
@@ -661,6 +707,11 @@ def apollo_people_search(state: State) -> State:
         "q_keywords",
     }
 
+    # Get pagination from state or default
+    pagination = state.get("pagination") or {"page": 1, "per_page": 10}
+    page = pagination.get("page", 1)
+    per_page = pagination.get("per_page", 10)
+
     def build_query(filters: Dict[str, Any]) -> str:
         params = []
         for key, values in filters.items():
@@ -674,8 +725,8 @@ def apollo_people_search(state: State) -> State:
                     params.append((f"{key}[]", v))
             else:
                 params.append((key, str(values)))
-        params.append(("page", "1"))
-        params.append(("per_page", "10"))
+        params.append(("page", str(page)))
+        params.append(("per_page", str(per_page)))
         return urlencode(params, doseq=True, quote_via=quote)
 
     for tier_name in ["tier_1", "tier_2", "tier_3"]:
@@ -708,6 +759,7 @@ def apollo_people_search(state: State) -> State:
                               {"tier": tier_name, "count": len(people)})
                 all_people = people[:MAX_APOLLO_RESULTS]
                 state["apollo_query_url"] = url
+                state["executed_apollo_params"] = filters
                 break
             else:
                 print(f"⚠️ No results in {tier_name}, moving to next tier...")
@@ -840,6 +892,11 @@ def apollo_company_search(state: State) -> State:
         "per_page",
     }
 
+    # Get pagination from state or default
+    pagination = state.get("pagination") or {"page": 1, "per_page": 10}
+    page = pagination.get("page", 1)
+    per_page = pagination.get("per_page", 10)
+
     def build_query(filters: Dict[str, Any]) -> str:
         params = []
         for key, values in (filters or {}).items():
@@ -857,8 +914,8 @@ def apollo_company_search(state: State) -> State:
             else:
                 params.append((key, str(values).strip()))
 
-        params.append(("page", "1"))
-        params.append(("per_page", "10"))
+        params.append(("page", str(page)))
+        params.append(("per_page", str(per_page)))
         return urlencode(params, doseq=True, quote_via=quote)
 
     for tier_name in ["tier_1", "tier_2", "tier_3"]:
@@ -880,6 +937,7 @@ def apollo_company_search(state: State) -> State:
                 print(f"✅ {len(companies)} companies found in {tier_name}.")
                 all_companies = companies[:MAX_APOLLO_RESULTS]
                 state["apollo_query_url"] = url
+                state["executed_apollo_params"] = filters
                 break
             else:
                 print(f"⚠️ No companies in {tier_name}, moving to next tier...")

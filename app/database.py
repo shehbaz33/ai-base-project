@@ -28,11 +28,10 @@ def init_db():
         User, 
         Provider, 
         Entity, 
-        Search, 
-        SearchResult, 
         EntityProfile, 
         EntitySource,
-        FinderSession  # Import the new model
+        FinderSession,
+        FinderSessionResult
     )
     Base.metadata.create_all(bind=engine)
 

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException,Depends, status
 from celery.result import AsyncResult
 from typing import Dict, Any
 
-from app.agents.tasks import run_finder_agent_task as run_finder_agent
+from app.agents.tasks import run_finder_agent
 from app.celery_config import celery_app
 from app.api.deps import get_current_user
 from app.models.user import User

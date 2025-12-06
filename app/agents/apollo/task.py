@@ -9,15 +9,7 @@ from app.utils.publisher import publish_event
 from app.agents.apollo.nodes import State, Intent, ExtractedApolloFilters
 import traceback
 
-from app.services.search import (
-    create_search_session,
-    upsert_entity,
-    create_entity_source,
-    create_entity_profile,
-    add_search_result,
-    get_or_create_provider
-)
-
+from app.services.entities import process_and_save_apollo_results
 
 @shared_task(bind=True, name="run_apollo_agent")
 def run_apollo_agent(self, query: str, user_id: str):
@@ -74,30 +66,10 @@ def run_apollo_agent(self, query: str, user_id: str):
 
         results = final_state.get("apollo_enriched_results") or final_state.get("apollo_results") or []
 
-        saved_search = None
-        saved_result_ids = []
-
         if user_id and results:
-            provider = get_or_create_provider(db, "apollo")
-
-            # Create search session
-            saved_search = create_search_session(db, user_id, query)
-
-            for rank, raw in enumerate(results, start=1):
-                entity_type = "company" if "website_url" in raw else "person"
-
-                # 1. upsert canonical entity
-                entity = upsert_entity(db, entity_type, raw.get("name", "Unknown"))
-
-                # 2. save raw source entry
-                create_entity_source(db, provider, entity, raw)
-
-                # 3. save normalized profile
-                create_entity_profile(db, entity, raw, entity_type)
-
-                # 4. link search result
-                result_row = add_search_result(db, saved_search, entity, rank, raw)
-                saved_result_ids.append(str(result_row.id))
+            # Save entities using the new service
+            # We don't have a finder_session_id here, so we pass None
+            process_and_save_apollo_results(db, results, session_id=None)
 
         # --------- SEND FINAL EVENT ---------
 
@@ -108,14 +80,12 @@ def run_apollo_agent(self, query: str, user_id: str):
             stage="done",
             message="Apollo search completed",
             payload={
-                "saved_search_id": str(saved_search.id) if saved_search else None,
                 "total_results": len(results),
             }
         )
 
         return {
             "status": "completed",
-            "saved_search_id": str(saved_search.id) if saved_search else None,
             "results_count": len(results),
             "execution_time": time.time() - start_time,
         }

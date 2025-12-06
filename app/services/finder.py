@@ -91,3 +91,20 @@ def update_finder_session_status(
     db.commit()
     db.refresh(session)
     return session
+
+
+def update_finder_session_apollo_params(
+    db: Session,
+    session: FinderSession,
+    apollo_query_params: dict,
+    pagination_state: dict
+) -> FinderSession:
+    """
+    Update the Apollo query parameters and pagination state.
+    """
+    session.apollo_query_params = apollo_query_params
+    session.pagination_state = pagination_state
+
+    db.commit()
+    db.refresh(session) 
+    return session

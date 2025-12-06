@@ -23,13 +23,37 @@ async def get_user_finder_sessions(
     Get all finder sessions for the current user.
     Returns sessions ordered by most recent first.
     """
-    sessions = db.query(FinderSession).filter(
+    """
+    Get all finder sessions for the current user.
+    Returns sessions ordered by most recent first.
+    """
+    from sqlalchemy import func
+    from app.models.finder_session_results import FinderSessionResult
+
+    # Query sessions with count of linked entities
+    # Outer join ensures we still get sessions with 0 results
+    results = db.query(
+        FinderSession,
+        func.count(FinderSessionResult.id).label("total_entities")
+    ).outerjoin(
+        FinderSessionResult, FinderSession.id == FinderSessionResult.session_id
+    ).filter(
         FinderSession.user_id == current_user.id
+    ).group_by(
+        FinderSession.id
     ).order_by(
         FinderSession.created_at.desc()
     ).offset(skip).limit(limit).all()
     
-    return [session.to_dict() for session in sessions]
+    response = []
+    for session, count in results:
+        session_dict = session.to_dict()
+        # Override the results/metrics with the actual count from the join
+        session_dict["results"] = count
+        session_dict["metrics"]["entities_fetched"] = count
+        response.append(session_dict)
+        
+    return response
 
 
 @router.get("/sessions/{session_id}", response_model=List[dict])

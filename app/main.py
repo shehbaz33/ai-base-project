@@ -7,7 +7,7 @@ import sys
 # Application imports
 from app.database import init_db
 from app.config.settings import get_settings
-from app.api.v1.endpoints import auth as auth_endpoints, research_agents, search_agents, websocket, finder_agent, finder_sessions
+from app.api.v1.endpoints import auth as auth_endpoints, research_agents, search_agents, websocket, finder_agent, finder_sessions, entities
 from app.api.v1.endpoints import protected as protected_endpoints
 from app.api.v1.endpoints import router as example_router
 
@@ -61,6 +61,7 @@ def create_application() -> FastAPI:
     app.include_router(research_agents.router, prefix="/api/v1/research", tags=["Research Agents"])
     app.include_router(finder_agent.router, prefix="/api/v1/finder", tags=["Finder Agents"])
     app.include_router(finder_sessions.router, prefix="/api/v1/finder_agents", tags=["Finder Agents Sessions"])
+    app.include_router(entities.router, prefix="/api/v1/entities", tags=["Entities"])
     @app.get("/health")
     async def health_check():
         """Health check endpoint""" 

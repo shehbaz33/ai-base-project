@@ -105,7 +105,47 @@ async def get_finder_session(
             
     return linked_entities
 
+    return linked_entities
 
+
+@router.get("/sessions/{session_id}/metadata", response_model=dict)
+async def get_finder_session_metadata(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get the details (metadata) of a specific finder session.
+    Does not include the full list of entities.
+    """
+    from sqlalchemy import func
+    from app.models.finder_session_results import FinderSessionResult
+
+    # Query session with count of linked entities
+    result = db.query(
+        FinderSession,
+        func.count(FinderSessionResult.id).label("total_entities")
+    ).outerjoin(
+        FinderSessionResult, FinderSession.id == FinderSessionResult.session_id
+    ).filter(
+        FinderSession.id == session_id,
+        FinderSession.user_id == current_user.id
+    ).group_by(
+        FinderSession.id
+    ).first()
+    
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Finder session not found"
+        )
+        
+    session, count = result
+    session_dict = session.to_dict()
+    session_dict["results"] = count
+    session_dict["metrics"]["entities_fetched"] = count
+    
+    return session_dict
 @router.delete("/sessions/{session_id}")
 async def delete_finder_session(
     session_id: UUID,

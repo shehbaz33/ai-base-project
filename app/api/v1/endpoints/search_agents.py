@@ -6,10 +6,11 @@ from app.agents.apollo.task import run_apollo_agent
 from app.celery_config import celery_app
 from app.api.deps import get_current_user
 from app.models.user import User
+from app.utils.api_response import create_api_response
 
 router = APIRouter()
 
-@router.post("/run_search_agent", response_model=Dict[str, str])
+@router.post("/run_search_agent", response_model=dict)
 async def trigger_search_agent(
     payload: Dict[str, str],
     current_user: User = Depends(get_current_user)
@@ -27,11 +28,13 @@ async def trigger_search_agent(
     try:
         # Start the Apollo search agent task
         task = run_apollo_agent.delay(payload["query"],current_user.id)
-        return {
-            "task_id": str(task.id),
-            "status": "started",
-            "message": "Search agent started. Use the task_id to track progress via WebSocket."
-        }
+        return create_api_response(
+            data={
+                "task_id": str(task.id),
+                "status": "started"
+            },
+            message="Search agent started. Use the task_id to track progress via WebSocket."
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -39,7 +42,7 @@ async def trigger_search_agent(
         )
 
 
-@router.get("/search_agent/task/{task_id}", response_model=Dict[str, Any])
+@router.get("/search_agent/task/{task_id}", response_model=dict)
 async def get_task_status(task_id: str,current_user: User = Depends(get_current_user)):
     """
     Get the status and result of a Celery task.
@@ -60,4 +63,4 @@ async def get_task_status(task_id: str,current_user: User = Depends(get_current_
             response["result"] = task_result.result
             response["error"] = False
     
-    return response
+    return create_api_response(data=response, message="Task status retrieved")

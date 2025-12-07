@@ -8,11 +8,12 @@ from app.api.deps import get_current_user, get_db
 from app.models.user import User
 from app.models.finder_sessions import FinderSession
 from app.models.entities import Entity
+from app.utils.api_response import create_api_response
 
 router = APIRouter()
 
 
-@router.get("/sessions", response_model=List[dict])
+@router.get("/sessions", response_model=dict)
 async def get_user_finder_sessions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -53,10 +54,10 @@ async def get_user_finder_sessions(
         session_dict["metrics"]["entities_fetched"] = count
         response.append(session_dict)
         
-    return response
+    return create_api_response(data=response, message="found sessions")
 
 
-@router.get("/sessions/{session_id}", response_model=List[dict])
+@router.get("/sessions/{session_id}", response_model=dict)
 async def get_finder_session(
     session_id: UUID,
     current_user: User = Depends(get_current_user),
@@ -103,9 +104,7 @@ async def get_finder_session(
             }
             linked_entities.append(entity_data)
             
-    return linked_entities
-
-    return linked_entities
+    return create_api_response(data=linked_entities, message="found session details")
 
 
 @router.get("/sessions/{session_id}/metadata", response_model=dict)
@@ -145,7 +144,7 @@ async def get_finder_session_metadata(
     session_dict["results"] = count
     session_dict["metrics"]["entities_fetched"] = count
     
-    return session_dict
+    return create_api_response(data=session_dict, message="found session metadata")
 @router.delete("/sessions/{session_id}")
 async def delete_finder_session(
     session_id: UUID,
@@ -167,7 +166,7 @@ async def delete_finder_session(
     db.delete(session)
     db.commit()
     
-    return {"message": "Session deleted successfully"}
+    return create_api_response(data=[], message="Session deleted successfully")
 
 
 @router.post("/sessions/{session_id}/fetch_more")
@@ -223,10 +222,12 @@ async def fetch_more_results(
     from app.agents.tasks import continue_finder_session
     task = continue_finder_session.delay(str(session_id), target_page, target_per_page)
     
-    return {
-        "message": "Fetching more results started",
-        "task_id": str(task.id),
-        "session_id": str(session_id),
-        "page": target_page,
-        "per_page": target_per_page
-    }
+    return create_api_response(
+        data={
+            "task_id": str(task.id),
+            "session_id": str(session_id),
+            "page": target_page,
+            "per_page": target_per_page
+        },
+        message="Fetching more results started"
+    )

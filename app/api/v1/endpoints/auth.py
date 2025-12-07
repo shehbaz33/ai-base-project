@@ -19,10 +19,11 @@ from app.core.exceptions import (
     InvalidTokenException,
     UserAlreadyExistsException
 )
+from app.utils.api_response import create_api_response
 
 router = APIRouter()
 
-@router.post("/register", response_model=UserSchema, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def register(
     user_in: UserCreate,
     db: Session = Depends(get_db)
@@ -37,9 +38,9 @@ async def register(
     
     # Create new user
     user = AuthService.create_user(db=db, user_in=user_in)
-    return user
+    return create_api_response(data=user, message="User registered successfully")
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=dict)
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
@@ -56,7 +57,8 @@ async def login(
         )
         
         # Create tokens
-        return AuthService.create_tokens(db=db, user_id=user.id)
+        tokens = AuthService.create_tokens(db=db, user_id=user.id)
+        return create_api_response(data=tokens, message="Login successful")
         
     except (InvalidCredentialsException, InactiveUserException) as e:
         raise HTTPException(
@@ -65,7 +67,7 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-@router.post("/refresh-token", response_model=TokenResponse)
+@router.post("/refresh-token", response_model=dict)
 async def refresh_token(
     token_in: RefreshTokenRequest,
     db: Session = Depends(get_db)
@@ -74,7 +76,8 @@ async def refresh_token(
     Refresh access token using a valid refresh token.
     """
     try:
-        return AuthService.refresh_tokens(db=db, refresh_token=token_in.refresh_token)
+        tokens = AuthService.refresh_tokens(db=db, refresh_token=token_in.refresh_token)
+        return create_api_response(data=tokens, message="Token refreshed")
     except InvalidTokenException as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -92,7 +95,7 @@ async def logout(
     Log out by revoking the provided refresh token.
     """
     AuthService.revoke_refresh_token(db=db, refresh_token=token_in.refresh_token)
-    return {"message": "Successfully logged out"}
+    return create_api_response(data=[], message="Successfully logged out")
 
 @router.post("/logout-all")
 async def logout_all(
@@ -103,4 +106,4 @@ async def logout_all(
     Log out from all devices by revoking all refresh tokens for the current user.
     """
     AuthService.revoke_all_user_refresh_tokens(db=db, user_id=current_user.id)
-    return {"message": "Successfully logged out from all devices"}
+    return create_api_response(data=[], message="Successfully logged out from all devices")

@@ -9,10 +9,11 @@ from app.models.entities import Entity
 from app.models.entity_profiles import EntityProfile
 from app.models.finder_sessions import FinderSession
 from app.models.finder_session_results import FinderSessionResult
+from app.utils.api_response import create_api_response
 
 router = APIRouter()
 
-@router.get("", response_model=List[dict])
+@router.get("", response_model=dict)
 async def get_user_entities(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -75,7 +76,7 @@ async def get_user_entities(
             "raw_input": session.raw_input
         })
         
-    return entities
+    return create_api_response(data=entities, message="found entities")
 
 
 @router.get("/{entity_id}", response_model=dict)
@@ -143,4 +144,4 @@ async def get_entity_details(
         ]
     }
     
-    return response
+    return create_api_response(data=response, message="found entity details")

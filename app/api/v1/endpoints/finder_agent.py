@@ -6,10 +6,11 @@ from app.agents.tasks import run_finder_agent
 from app.celery_config import celery_app
 from app.api.deps import get_current_user
 from app.models.user import User
+from app.utils.api_response import create_api_response
 
 router = APIRouter()
 
-@router.post("/run_finder_agent", response_model=Dict[str, str])
+@router.post("/run_finder_agent", response_model=dict)
 async def trigger_finder_agent(
     payload: Dict[str, str],
     current_user: User = Depends(get_current_user)
@@ -27,11 +28,13 @@ async def trigger_finder_agent(
     try:
         # Start the Finder agent task
         task = run_finder_agent.delay(payload["query"],current_user.id)
-        return {
-            "task_id": str(task.id),
-            "status": "started",
-            "message": "Finder agent started. Use the task_id to track progress via WebSocket."
-        }
+        return create_api_response(
+            data={
+                "task_id": str(task.id),
+                "status": "started"
+            },
+            message="Finder agent started. Use the task_id to track progress via WebSocket."
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -39,17 +42,17 @@ async def trigger_finder_agent(
         )
 
 
-@router.get("/finder_agent/task/{task_id}", response_model=Dict[str, Any])
+@router.get("/finder_agent/task/{task_id}", response_model=dict)
 async def get_task_status(task_id: str,current_user: User = Depends(get_current_user)):
     """
     Get the status and result of a Celery task.
     """
-    # task_result = AsyncResult(task_id, app=celery_app)
+    task_result = AsyncResult(task_id, app=celery_app)
     
     response = {
         "task_id": task_id,
-        "status": "completed",
-        "ready": True
+        "status": task_result.status,
+        "ready": task_result.ready()
     }
     
     if task_result.ready():
@@ -60,4 +63,4 @@ async def get_task_status(task_id: str,current_user: User = Depends(get_current_
             response["result"] = task_result.result
             response["error"] = False
     
-    return response
+    return create_api_response(data=response, message="Task status retrieved")

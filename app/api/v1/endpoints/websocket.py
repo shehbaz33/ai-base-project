@@ -4,6 +4,7 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.utils.redis_client import redis_client
 from anyio import to_thread
+from app.utils.api_response import create_api_response
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -84,4 +85,4 @@ async def test_redis():
             "timestamp": 1234567890
         })
     )
-    return {"status": "ok"}
+    return create_api_response(data={"status": "ok"}, message="Redis test message published")
